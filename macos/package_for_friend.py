@@ -60,7 +60,7 @@ def main() -> int:
     if not (app / "Contents" / "MacOS" / "SOL.01").is_file():
         raise SystemExit("The self-contained SOL.01.app is missing.")
     run(["/usr/bin/codesign", "--verify", "--deep", "--strict", str(app)])
-    run(["/usr/bin/lipo", "-verify_arch", provenance["architecture"], str(app / "Contents" / "MacOS" / "SOL.01")])
+    run(["/usr/bin/lipo", str(app / "Contents" / "MacOS" / "SOL.01"), "-verify_arch", provenance["architecture"]])
 
     chip = "Apple Silicon (Apple M-series)" if provenance["architecture"] == "arm64" else "Intel"
     instructions = (

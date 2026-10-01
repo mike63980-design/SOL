@@ -195,7 +195,7 @@ def main() -> int:
         raise SystemExit("The macOS Qt platform plugin libqcocoa.dylib is missing from the application bundle.")
     run([str(executable), "--smoke-test", str(output / "BUNDLE_SMOKE_TEST.json")], env=smoke_env)
     run(["/usr/bin/codesign", "--verify", "--deep", "--strict", "--verbose=2", str(app)])
-    run(["/usr/bin/lipo", "-verify_arch", arch, str(executable)])
+    run(["/usr/bin/lipo", str(executable), "-verify_arch", arch])
     shutil.copy2(resources / "BUILD_PROVENANCE.json", output / "BUILD_PROVENANCE.json")
     shutil.copy2(resources / "requirements-resolved.txt", output / "requirements-resolved.txt")
     archive = output / f"SOL.01-macOS-{arch}-{APP_VERSION}.zip"
