@@ -1,0 +1,55 @@
+name: Publish the verified Apple M4 installer
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/publish-m4.yml']
+
+permissions:
+  contents: write
+  actions: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+
+      - name: Require the successful original native Mac build
+        run: |
+          test "$(gh api repos/$GH_REPO/actions/runs/36920122088 --jq .conclusion)" = success
+          test "$(gh api repos/$GH_REPO/actions/runs/36920122088 --jq .head_sha)" = f688fcb732680806b75d31da78b2d371cf628abe
+
+      - name: Retrieve the tested Apple Silicon installer and verification
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          artifact-ids: '11190819322,11190814380'
+          run-id: 36920122088
+          github-token: ${{ github.token }}
+          path: native-output
+
+      - name: Verify and label the Apple M4 installer
+        run: python3 release/prepare_m4_release.py
+
+      - name: Publish the permanent Apple M4 download
+        run: |
+          gh release create v0.1.0-macos-m4 \
+            --target f688fcb732680806b75d31da78b2d371cf628abe \
+            --title 'SOL.01 for Apple M4 — macOS 15.7+' \
+            --notes-file release/RELEASE_NOTES.md \
+            'release-files/SOL.01-macOS-Apple-M4-0.1.0.dmg#Download for Apple M4' \
+            'release-files/SOL.01-macOS-Apple-M4-0.1.0.dmg.sha256#Optional SHA-256 checksum'
+
+      - name: Remove the superseded Intel downloads
+        run: |
+          gh api --method DELETE repos/$GH_REPO/actions/artifacts/11192135948
+          gh api --method DELETE repos/$GH_REPO/actions/artifacts/11192021105
+          gh api --method DELETE repos/$GH_REPO/actions/artifacts/11192011113
+          gh api --method DELETE repos/$GH_REPO/actions/artifacts/11191008562
