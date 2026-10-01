@@ -1,0 +1,122 @@
+# Place this Mac package in the repository's macos/ directory.
+# This creates downloadable CI artifacts; it does not publish a GitHub release.
+name: Build SOL.01 for macOS
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [macos-release]
+    paths:
+      - 'macos/**'
+      - '.github/workflows/build-macos.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Native macOS build (${{ matrix.app_arch }})
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-15
+            python_arch: arm64
+            app_arch: arm64
+          - runner: macos-15-intel
+            python_arch: x64
+            app_arch: x86_64
+    defaults:
+      run:
+        shell: bash
+        working-directory: macos
+    env:
+      PYTHONUNBUFFERED: "1"
+      PIP_DISABLE_PIP_VERSION_CHECK: "1"
+
+    steps:
+      - name: Check out the separate Mac package
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up native standard CPython 3.14
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.14"
+          architecture: ${{ matrix.python_arch }}
+          freethreaded: false
+          allow-prereleases: false
+
+      - name: Verify the native host and packaging inputs
+        run: |
+          mkdir -p .ci-logs
+          python -c "import platform, sys; actual = platform.machine(); assert sys.platform == 'darwin' and actual == '${{ matrix.app_arch }}', (sys.platform, actual); print(platform.platform()); print(sys.version)" | tee .ci-logs/host.txt
+          test -f package_for_friend.py
+
+      - name: Restore the unchanged original application bytecode
+        run: python restore_bytecode.py
+
+      - name: Build and test the self-contained application
+        run: |
+          set -o pipefail
+          python -u build_mac.py 2>&1 | tee .ci-logs/build.log
+
+      - name: Create the friend download packages
+        run: |
+          set -o pipefail
+          python -u package_for_friend.py 2>&1 | tee .ci-logs/package.log
+
+      # Upload the finished archives, never the raw .app. Wrapping the app in
+      # ditto ZIP / DMG preserves its executable permissions and bundle symlinks.
+      - name: Upload the finished Mac installer
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: SOL.01-macOS-${{ matrix.app_arch }}-downloads
+          path: |
+            macos/dist/**/SOL.01-macOS-*.dmg
+            macos/dist/**/SOL.01-macOS-*.dmg.sha256
+          compression-level: 0
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Upload the recipient's installation instructions
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: SOL.01-macOS-${{ matrix.app_arch }}-installation
+          path: macos/dist/**/INSTALL.txt
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Upload successful build verification separately
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: SOL.01-macOS-${{ matrix.app_arch }}-verification
+          path: |
+            macos/dist/**/SOURCE_SMOKE_TEST.json
+            macos/dist/**/SOURCE_SMOKE_TEST.png
+            macos/dist/**/BUNDLE_SMOKE_TEST.json
+            macos/dist/**/BUNDLE_SMOKE_TEST.png
+            macos/dist/**/BUILD_PROVENANCE.json
+            macos/dist/**/requirements-resolved.txt
+            macos/dist/**/DOWNLOADS.json
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Upload failure diagnostics separately
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: SOL.01-macOS-${{ matrix.app_arch }}-failure-diagnostics
+          path: |
+            macos/.ci-logs/
+            macos/dist/**/SOURCE_SMOKE_TEST.json
+            macos/dist/**/SOURCE_SMOKE_TEST.png
+            macos/dist/**/BUNDLE_SMOKE_TEST.json
+            macos/dist/**/BUNDLE_SMOKE_TEST.png
+            macos/.build/**/pyinstaller/warn-*.txt
+          include-hidden-files: true
+          if-no-files-found: warn
+          retention-days: 14

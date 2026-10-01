@@ -1,0 +1,7 @@
+.venv/
+.build/
+dist/
+.ci-logs/
+__pycache__/
+**/__pycache__/
+# Recovered application .pyc files under source/ are intentional build inputs.

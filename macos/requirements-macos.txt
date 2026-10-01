@@ -1,0 +1,13 @@
+# Runtime versions match the recovered SOL.01 Windows release.
+# Install native macOS wheels; do not copy the Windows _internal directory.
+PySide6==6.11.2
+numpy==2.5.2
+pandas==3.0.5
+pyarrow==25.0.1
+databento==0.85.0
+databento-dbn==0.68.0
+holidays==0.103
+python-dotenv==1.2.3
+requests==2.34.2
+zstandard==0.25.0
+tzdata==2026.3
