@@ -1,6 +1,6 @@
 # Place this Mac package in the repository's macos/ directory.
 # This creates downloadable CI artifacts; it does not publish a GitHub release.
-name: Build SOL.01 for macOS
+name: Build SOL.01 for Apple Silicon M4
 
 on:
   workflow_dispatch:
@@ -15,7 +15,7 @@ permissions:
 
 jobs:
   build:
-    name: Native macOS build (${{ matrix.app_arch }})
+    name: Apple Silicon M4 installer (arm64)
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 60
     strategy:
@@ -25,9 +25,6 @@ jobs:
           - runner: macos-15
             python_arch: arm64
             app_arch: arm64
-          - runner: macos-15-intel
-            python_arch: x64
-            app_arch: x86_64
     defaults:
       run:
         shell: bash
@@ -74,7 +71,7 @@ jobs:
       - name: Upload the finished Mac installer
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: SOL.01-macOS-${{ matrix.app_arch }}-downloads
+          name: SOL.01-macOS-Apple-Silicon-M4-downloads
           path: |
             macos/dist/**/SOL.01-macOS-*.dmg
             macos/dist/**/SOL.01-macOS-*.dmg.sha256
@@ -85,7 +82,7 @@ jobs:
       - name: Upload the recipient's installation instructions
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: SOL.01-macOS-${{ matrix.app_arch }}-installation
+          name: SOL.01-macOS-Apple-Silicon-M4-installation
           path: macos/dist/**/INSTALL.txt
           if-no-files-found: error
           retention-days: 30
@@ -93,7 +90,7 @@ jobs:
       - name: Upload successful build verification separately
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: SOL.01-macOS-${{ matrix.app_arch }}-verification
+          name: SOL.01-macOS-Apple-Silicon-M4-verification
           path: |
             macos/dist/**/SOURCE_SMOKE_TEST.json
             macos/dist/**/SOURCE_SMOKE_TEST.png
@@ -109,7 +106,7 @@ jobs:
         if: failure()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: SOL.01-macOS-${{ matrix.app_arch }}-failure-diagnostics
+          name: SOL.01-macOS-Apple-Silicon-M4-failure-diagnostics
           path: |
             macos/.ci-logs/
             macos/dist/**/SOURCE_SMOKE_TEST.json

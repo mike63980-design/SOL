@@ -1,48 +1,38 @@
-# SOL.01 for macOS — build package
+# SOL.01 for macOS — Apple M4 edition
 
-This package prepares the supplied SOL.01 0.1.0 manual historical replay app for
-macOS. The original editable source project was not included in the Windows
-release. Its 28 Python application modules were recovered as bytecode, preserving
-the original interface, chart, CSV/DBN loading, replay engine, simulated orders,
-and saved-trade database. `source/BYTECODE_MANIFEST.json` records their origin and
-checksums. The readable Mac integration lives in `launch.py` and `mac_compat.py`.
+**The finished SOL.01 0.1.0 manual edition installer for Apple M4 is available in
+[`../SOL.01-macOS-Downloads/`](../SOL.01-macOS-Downloads/).** The app includes
+Python and its native Mac libraries. The recipient does not need Python,
+programming tools, or a build step.
 
-**This is a build package, not a prebuilt Mac application.** A native `.app` must
-be built and verified on a Mac. Windows DLLs and the Windows executable are not
-included. Native Mac compilation and interactive Mac testing have not been
-performed on this Windows computer.
+This folder contains the maintained Mac build inputs; the separate delivery
+folder contains the finished Apple M4 application. The original Windows release was
+preserved: all 1,761 manifest files still match their original checksums.
 
-## Build on a Mac
+## Recipient: download and install
 
-Use macOS 13 or later, standard
-**CPython 3.14**, and an internet connection for
-the initial dependency download. Python 3.12, 3.13, and 3.15 cannot run the
-recovered bytecode. The script checks the Python version and bytecode format
-before building. Use a native ARM Python on Apple Silicon or an Intel Python on
-an Intel Mac. Each build targets the architecture of its Python interpreter.
+Download [SOL.01-macOS-Apple-M4-0.1.0.dmg](https://github.com/mike63980-design/SOL/releases/download/v0.1.0-macos-m4/SOL.01-macOS-Apple-M4-0.1.0.dmg).
+This Apple M4 edition requires **macOS 15.7 or later** and contains the native
+Apple Silicon ARM64 application.
 
-1. Copy this entire folder to a writable folder on the Mac and extract it.
-2. Install Python 3.14 from [python.org](https://www.python.org/downloads/macos/).
-3. Open Terminal in this folder and run:
+The permanent public release is available at
+[v0.1.0-macos-m4](https://github.com/mike63980-design/SOL/releases/tag/v0.1.0-macos-m4).
+The download works without a GitHub login. A local copy is also available in
+[`../SOL.01-macOS-Downloads/`](../SOL.01-macOS-Downloads/).
 
-   ```sh
-   bash build_mac.command
-   ```
+1. Download or receive the Apple M4 DMG and open it.
+2. Drag `SOL.01.app` to the Applications shortcut inside the disk image.
+3. Open SOL.01 from Applications, then eject the disk image.
 
-The script creates an isolated Python environment, installs Mac dependencies,
-runs the original app's smoke tests, builds `SOL.01.app`, then repeats the smoke
-tests against the bundled executable. It creates a distributable ZIP with a
-SHA-256 checksum under `dist`. The build output names and exact location are
-printed when it finishes. Copy the resulting `.app` into Applications and open
-it. The resulting application bundles Python; other users do not need to install
-Python to run it.
+This personal build is ad hoc signed and has not been notarized by Apple.
+If macOS blocks first launch because the developer cannot be verified, follow
+Apple's [Open Anyway instructions](https://support.apple.com/en-us/102445) for an
+app you trust. The same instructions are included in the DMG and in the delivery
+folder's Apple M4 installation guide.
 
-Each build records the build Mac's OS version as its minimum supported system.
-Build on the oldest supported Mac OS you intend to distribute to; a build made
-on a newer system does not claim compatibility with older systems.
-
-Build separately on Apple Silicon and Intel to produce both editions. This kit
-does not combine native libraries into a universal application.
+The earlier `SOL.01-macOS-Build-Kit.zip` is a maintainer build kit. Send the
+finished DMG to the friend. Ready-to-run ZIPs were produced on the build machines
+but were not retained as downloads. The current delivery contains one Apple M4 DMG.
 
 ## Use the app
 
@@ -82,25 +72,82 @@ For a separate development data directory, set `SOL_DATA_HOME` to an absolute
 folder path before launching. Smoke tests always use a separate temporary folder
 and never add their synthetic trades to your real saved-trade database.
 
-## Verification and distribution
+## Completed verification
 
 The build smoke tests exercise startup, both tabs, CSV loading, synthetic DBN and
 compressed DBN decoding, replay, BUY/SELL entry and flattening, SQLite persistence,
 saved-trade results, volume and chart rendering. They also check that data writes
 are outside the bundle. Each test emits JSON and a window screenshot.
 
-The `verification` folder contains any checks performed while preparing the kit.
-A Windows-hosted integration check does not verify Mac Cocoa windows, trackpad
-gestures, Mac frameworks, native packaging, or Gatekeeper behavior. Before sharing
-the final Mac build, open the app on its target architecture, load the demo, test
-play/pause/seek, drag brackets, export CSV, close and reopen it, and confirm that
-saved trades remain available. A second Mac should also test the distribution ZIP.
+Both native Apple Silicon and Intel build jobs passed in
+[GitHub Actions run 36920122088](https://github.com/mike63980-design/SOL/actions/runs/36920122088)
+on October 1, 2026, from commit
+`f688fcb732680806b75d31da78b2d371cf628abe`. The builds used macOS 15.7.9 and
+standard CPython 3.14.7. Source and frozen executable tests passed on both native
+architectures, and the jobs verified architecture, app signatures, and DMG
+integrity. This is historical build verification; the current delivery contains
+only the Apple Silicon application labelled for Apple M4. Its unchanged DMG
+SHA-256 is `cee634483bcb6799e3c7e704de193f163aa0114f003616ef33fabd5fb1231c06`.
 
-PyInstaller applies ad hoc signing unless a Developer ID is supplied. Ad hoc
-signing is not Apple notarization. For normal distribution, use your Apple
-Developer ID to sign the app and notarize it with Apple's tools. No Apple
-credentials are included or requested by this package. Installed Mac dependency
-notices and build provenance are collected during each build.
+The automated app tests used Qt's offscreen platform. Interactive Finder/Cocoa
+launch, trackpad gestures, and Gatekeeper behavior have not been tested, and no
+interactive test on an M4 Mac has been performed. The
+delivery folder's [`RELEASE_VERIFICATION.json`](../SOL.01-macOS-Downloads/RELEASE_VERIFICATION.json)
+and `verification/` folder contain the build provenance, test reports,
+screenshots, and Windows preservation check. This folder's `verification/`
+contains the earlier Windows preparation checks.
+
+The original application source project was not included in the Windows release.
+Its 28 recovered bytecode modules preserve the original application logic;
+`source/BYTECODE_MANIFEST.json` records their origin and checksums. The readable
+Mac integration lives in `launch.py` and `mac_compat.py`. Native Mac libraries,
+third-party notices, and provenance are bundled separately from Windows files.
+
+## Maintainer: rebuild on a Mac
+
+These steps are for maintaining a new release. The recipient installs the
+finished DMG above and does not perform them.
+
+Use a native Apple Silicon Mac running macOS 13 or later, standard
+**CPython 3.14**, and an internet connection for dependency downloads. The build
+checks Python's bytecode magic (`2b0e0d0a`) and rejects free-threaded builds and
+Rosetta. Python 3.12, 3.13, and 3.15 cannot run the recovered modules.
+
+1. Copy this complete maintained folder into a writable folder on the build Mac.
+2. Install standard Python 3.14 from [python.org](https://www.python.org/downloads/macos/).
+3. Open Terminal in the folder and run:
+
+   ```sh
+   python3.14 restore_bytecode.py
+   bash build_mac.command
+   python3.14 package_for_friend.py
+   ```
+
+The restoration verifies the text payload and recovered module hashes. The build
+creates an isolated virtual environment, installs native dependencies, runs the
+source smoke tests, builds `SOL.01.app`, and repeats the tests against the bundled
+executable. The packaging script requires a verified native build, then creates
+the DMG, a ready-to-run ZIP, installation instructions, and checksums under
+`dist/`.
+
+Each build records its build machine's macOS major/minor version as the minimum
+system. The delivered Apple M4 build requires macOS 15.7; older-system support
+needs a separate build and verification on that system. Use native ARM64 Python
+for this edition.
+
+The [SOL repository](https://github.com/mike63980-design/SOL) keeps these
+inputs in `macos/` on `macos-release`, with the workflow at
+`.github/workflows/build-macos.yml`; its original `main` branch is preserved
+separately. The repository is public. Native CI creates installers and
+verification artifacts, and the published `v0.1.0-macos-m4` release retains the
+Apple M4 DMG as a permanent download. The publisher workflow completed
+successfully in [run 36927325227](https://github.com/mike63980-design/SOL/actions/runs/36927325227).
+
+Before claiming interactive Mac verification for a later release, test Finder
+launch, demo loading, play/pause/seek, bracket dragging, CSV export, closing and
+reopening, and saved trades on the target Macs. A second Mac should test the
+downloaded installer and first-launch behavior. Developer ID signing and Apple
+notarization can be added to remove the unverified-developer first-launch flow.
 
 ## Implementation references
 
