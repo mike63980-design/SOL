@@ -45,6 +45,7 @@ def select_output(requested: Path | None) -> Path:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--build-output", type=Path)
+    parser.add_argument("--dmg-only", action="store_true", help="Create a single disk-image download.")
     args = parser.parse_args()
     if sys.platform != "darwin":
         raise SystemExit("A finished Mac installer must be packaged on macOS.")
@@ -62,7 +63,14 @@ def main() -> int:
     run(["/usr/bin/codesign", "--verify", "--deep", "--strict", str(app)])
     run(["/usr/bin/lipo", str(app / "Contents" / "MacOS" / "SOL.01"), "-verify_arch", provenance["architecture"]])
 
-    chip = "Apple Silicon (Apple M-series)" if provenance["architecture"] == "arm64" else "Intel"
+    chip = "Apple M4 / Apple Silicon" if provenance["architecture"] == "arm64" else "Intel"
+    market = provenance.get("market_data")
+    historical_start = (
+        f"The app includes {market['file_count']} NQ historical data files. First launch\n"
+        "prepares them in ~/Library/Application Support/SOL.01/data/nq_ticks/\n"
+        "2025-2026 Year/. This may take a little time. Click Load File to choose\n"
+        "a day from that folder, then use Play for historical replay.\n"
+    ) if market else "Load your tick CSV or Databento DBN/DBN.ZST files with Load File.\n"
     instructions = (
         "SOL.01 — Manual Historical Replay\n\n"
         f"Requires macOS {provenance['minimum_macos']} or later on {chip}.\n\n"
@@ -70,19 +78,22 @@ def main() -> int:
         "1. Open the SOL.01 disk image (.dmg).\n"
         "2. Drag SOL.01.app to the Applications shortcut.\n"
         "3. Open SOL.01 from Applications, then eject the disk image.\n"
-        "For the ZIP download, extract it and drag SOL.01.app to Applications.\n\n"
+        + ("\n" if args.dmg_only else "For the ZIP download, extract it and drag SOL.01.app to Applications.\n\n")
+        +
         "Python and the app's libraries are already included. No programming,\n"
-        "Python installation, broker login, or online setup is needed to run the demo.\n\n"
+        "Python installation, broker login, or online setup is needed.\n\n"
         "FIRST OPEN\n"
         "This personal build has not been notarized by Apple. If macOS blocks it\n"
         "because the developer cannot be verified, follow Apple's instructions\n"
         "for an app you trust: System Settings > Privacy & Security > Open Anyway.\n"
         "https://support.apple.com/en-us/102445\n\n"
         "START\n"
-        "Open the Instructions tab for the full guide. Load the included synthetic\n"
-        "demo from ~/Library/Application Support/SOL.01/demo/SYNTHETIC_DEMO.csv.\n"
+        "Open the Instructions tab for the full guide.\n"
+        + historical_start +
+        "An optional synthetic demo is in\n"
+        "~/Library/Application Support/SOL.01/demo/SYNTHETIC_DEMO.csv.\n"
         "Use Play, BUY MKT, SELL MKT and FLATTEN for historical replay and simulated\n"
-        "trading. Load your own tick CSV or Databento DBN/DBN.ZST files for market data.\n"
+        "trading.\n"
         "Command + scroll zooms chart prices.\n\n"
         "SAVED TRADES\n"
         "Settings and trades are stored in:\n"
@@ -99,23 +110,27 @@ def main() -> int:
     (stage / "Applications").symlink_to("/Applications", target_is_directory=True)
     (stage / "INSTALL.txt").write_text(instructions, encoding="utf-8")
     # Zip and DMG contain the finished .app and instructions, without build sources.
-    name = f"SOL.01-macOS-{provenance['architecture']}-{provenance['version']}"
+    label = "Apple-M4-with-NQ-Data" if market and provenance["architecture"] == "arm64" else provenance["architecture"]
+    name = f"SOL.01-macOS-{label}-{provenance['version']}"
     dmg = output / (name + ".dmg")
     run(["/usr/bin/hdiutil", "create", "-volname", "SOL.01", "-srcfolder", str(stage), "-format", "UDZO", str(dmg)])
     run(["/usr/bin/hdiutil", "verify", str(dmg)])
     checksum(dmg)
-    download = output / (name + "-Ready-to-Run.zip")
-    run(["/usr/bin/ditto", "-c", "-k", "--sequesterRsrc", str(stage), str(download)])
-    checksum(download)
+    files = [dmg.name, "INSTALL.txt"]
+    if not args.dmg_only:
+        download = output / (name + "-Ready-to-Run.zip")
+        run(["/usr/bin/ditto", "-c", "-k", "--sequesterRsrc", str(stage), str(download)])
+        checksum(download)
+        files.append(download.name)
     (output / "DOWNLOADS.json").write_text(json.dumps({
         "application": "SOL.01", "version": provenance["version"],
         "architecture": provenance["architecture"],
         "minimum_macos": provenance["minimum_macos"],
         "self_contained": True, "python_installation_required": False,
         "native_smoke_tests_passed": True,
-        "notarized": False, "files": [dmg.name, download.name, "INSTALL.txt"],
+        "notarized": False, "files": files, "market_data": market,
     }, indent=2) + "\n", encoding="utf-8")
-    print(f"Finished Mac downloads:\n{dmg}\n{download}")
+    print(f"Finished Mac installer:\n{dmg}")
     return 0
 
 

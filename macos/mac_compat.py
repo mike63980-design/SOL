@@ -8,6 +8,8 @@ from pathlib import Path
 import shutil
 import sys
 
+from market_data import install_payload, set_default_data_folder
+
 BYTECODE_MAGIC = bytes.fromhex("2b0e0d0a")
 
 
@@ -44,6 +46,7 @@ def configure(root: Path | None = None) -> Path:
         shutil.copyfile(resource_root() / "demo" / demo.name, demo)
     os.environ["SOL_SETTINGS_PATH"] = str(root / "data" / "manual" / "app_settings.json")
     os.environ["IDLE_TRADER_DB"] = str(root / "data" / "manual" / "manual.sqlite")
+    market = install_payload(resource_root() / "market_data", root)
 
     import idle_trader.gui as gui
     import idle_trader.manual_app as manual
@@ -53,6 +56,9 @@ def configure(root: Path | None = None) -> Path:
     # Do not create or write into a signed application bundle, even on first launch.
     gui.__file__ = str(root / "source" / "idle_trader" / "gui.py")
     manual.__file__ = str(root / "source" / "idle_trader" / "manual_app.py")
+    if market is not None:
+        settings_path, _ = manual.prepare_manual_settings(root)
+        set_default_data_folder(settings_path, root, resource_root(), market.folder)
 
     if not getattr(manual.ManualWindow, "_sol_mac_guide", False):
         original_build = manual.ManualWindow._build
@@ -71,6 +77,14 @@ def configure(root: Path | None = None) -> Path:
                 + escape(str(window.project_dir / "data" / "manual"))
                 + "</p>"
             )
+            year_folder = window.project_dir / "data" / "nq_ticks" / "2025-2026 Year"
+            if year_folder.is_dir():
+                guide += (
+                    "<p><b>Included historical data:</b> Use Load File to select a day from "
+                    + escape(str(year_folder))
+                    + ". Data opens only when you choose a file. "
+                    "Files in the bad folder are retained for reference.</p>"
+                )
             window.instructions.setHtml(guide)
 
         manual.ManualWindow._build = build_with_mac_guide

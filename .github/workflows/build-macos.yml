@@ -1,5 +1,5 @@
 # Place this Mac package in the repository's macos/ directory.
-# This creates downloadable CI artifacts; it does not publish a GitHub release.
+# Publish the verified full-data M4 installer from the native build job.
 name: Build SOL.01 for Apple Silicon M4
 
 on:
@@ -11,7 +11,11 @@ on:
       - '.github/workflows/build-macos.yml'
 
 permissions:
-  contents: read
+  contents: write
+
+concurrency:
+  group: sol01-apple-m4-with-nq-data-0.1.1
+  cancel-in-progress: false
 
 jobs:
   build:
@@ -56,28 +60,124 @@ jobs:
       - name: Restore the unchanged original application bytecode
         run: python restore_bytecode.py
 
+      - name: Test historical-data validation and preservation
+        run: |
+          set -o pipefail
+          python -m unittest discover -s tests -v 2>&1 | tee .ci-logs/unit-tests.log
+
+      - name: Download and safely verify all included NQ data
+        run: |
+          set -o pipefail
+          mkdir -p .ci-downloads
+          curl --fail --location --retry 3 --output .ci-downloads/SOL.01-NQ-2025-2026-Data.zip https://github.com/mike63980-design/SOL/releases/download/v0.1.0-macos-m4/SOL.01-NQ-2025-2026-Data.zip
+          python restore_market_archive.py .ci-downloads/SOL.01-NQ-2025-2026-Data.zip | tee .ci-logs/data-archive-verification.json
+          python -c "from pathlib import Path; Path('.ci-downloads/SOL.01-NQ-2025-2026-Data.zip').unlink()"
+
       - name: Build and test the self-contained application
         run: |
           set -o pipefail
-          python -u build_mac.py 2>&1 | tee .ci-logs/build.log
+          python -u build_mac.py --require-market-data --skip-archive 2>&1 | tee .ci-logs/build.log
 
       - name: Create the friend download packages
         run: |
           set -o pipefail
-          python -u package_for_friend.py 2>&1 | tee .ci-logs/package.log
+          python -u package_for_friend.py --dmg-only 2>&1 | tee .ci-logs/package.log
 
-      # Upload the finished archives, never the raw .app. Wrapping the app in
-      # ditto ZIP / DMG preserves its executable permissions and bundle symlinks.
-      - name: Upload the finished Mac installer
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
-        with:
-          name: SOL.01-macOS-Apple-Silicon-M4-downloads
-          path: |
-            macos/dist/**/SOL.01-macOS-*.dmg
-            macos/dist/**/SOL.01-macOS-*.dmg.sha256
-          compression-level: 0
-          if-no-files-found: error
-          retention-days: 30
+      - name: Verify the finished installer and prepare release notes
+        id: release
+        run: |
+          python - <<'PY'
+          import hashlib
+          import json
+          import os
+          from pathlib import Path
+          candidates = sorted(Path('dist').glob('*/DOWNLOADS.json'))
+          assert len(candidates) == 1, 'Expected one verified native installer build'
+          output = candidates[0].parent.resolve()
+          downloads = json.loads(candidates[0].read_text())
+          provenance = json.loads((output / 'BUILD_PROVENANCE.json').read_text())
+          assert downloads['version'] == provenance['version'] == '0.1.1'
+          assert downloads['architecture'] == provenance['architecture'] == 'arm64'
+          assert downloads['self_contained'] and not downloads['python_installation_required']
+          assert downloads['native_smoke_tests_passed']
+          market = provenance['market_data']
+          assert market['dataset_id'] == 'nq-2025-2026-9765e9acc27cbf03'
+          assert market['folder'] == '2025-2026 Year'
+          assert market['file_count'] == 284 and market['total_bytes'] == 1498349959
+          assert market['fully_verified_before_build']
+          assert downloads['market_data'] == market
+          for name in ('SOURCE_SMOKE_TEST.json', 'BUNDLE_SMOKE_TEST.json'):
+              report = json.loads((output / name).read_text())
+              assert report['result'] == 'PASS'
+              assert report['mac_integration']['native_macos_verified']
+              assert report['mac_integration']['test_host'] == 'darwin'
+              historical = report['market_data']
+              assert historical['included_files'] == historical['installed_files'] == 284
+              assert historical['included_bytes'] == 1498349959
+              assert historical['installed_files_sha256_verified']
+              assert historical['installed_outside_bundle'] and historical['copy_once_verified']
+              assert historical['default_folder_verified_in_window'] and not historical['auto_load_data']
+              assert historical['retained_bad_files'] == 3
+              assert historical['actual_dbn_replay']['loaded_ticks'] == 2192
+              assert historical['actual_dbn_replay']['replayed_ticks'] == 32
+              assert historical['actual_dbn_replay']['bounded_replay_complete']
+          filename = 'SOL.01-macOS-Apple-M4-with-NQ-Data-0.1.1.dmg'
+          dmg = output / filename
+          checksum = output / (filename + '.sha256')
+          assert 0 < dmg.stat().st_size < 2000000000, 'Installer exceeds the public release asset size limit'
+          with dmg.open('rb') as stream:
+              digest = hashlib.file_digest(stream, 'sha256').hexdigest()
+          assert checksum.read_text().strip() == f'{digest}  {filename}'
+          release = {'tag': 'v0.1.1-macos-m4', 'filename': filename, 'size': dmg.stat().st_size, 'sha256': digest,
+                     'dataset_id': market['dataset_id'], 'data_file_count': market['file_count'], 'data_total_bytes': market['total_bytes']}
+          Path('.ci-logs/release-verification.json').write_text(json.dumps(release, indent=2) + '\n')
+          notes = f'''SOL.01 manual replay and simulated trading for Apple Silicon MacBooks, including M4.
+
+          Download **{filename}** below. Python and the native application libraries are included.
+          Requires **macOS {provenance['minimum_macos']} or later**.
+
+          1. Open the downloaded disk image.
+          2. Drag **SOL.01.app** to **Applications**.
+          3. Open SOL.01 from Applications and allow the first launch to install the included market data.
+          4. If macOS blocks the personal build, open **System Settings > Privacy & Security > Open Anyway**. [Apple's instructions](https://support.apple.com/en-us/102445)
+
+          Includes **284 NQ trade files** (**1,498,349,959 bytes**) in **2025-2026 Year**.
+          Data is installed automatically into `~/Library/Application Support/SOL.01/data/nq_ticks/2025-2026 Year/`.
+          Existing settings, saved trades, and user data are preserved. Open the Instructions tab for the controls.
+
+          This personal build is ad-hoc signed and has not been notarized by Apple.
+          Native source and bundled application smoke tests, signature and architecture checks, and disk-image verification passed before publishing.
+
+          Installer size: **{dmg.stat().st_size:,} bytes**. SHA256: `{digest}`.
+          The matching `.sha256` file is also included below.
+          '''
+          Path('.ci-logs/release-notes.md').write_text(notes)
+          with Path(os.environ['GITHUB_OUTPUT']).open('a') as stream:
+              stream.write(f'dmg={dmg}\nchecksum={checksum}\n')
+          PY
+
+      - name: Publish the verified M4 installer with all NQ data
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_DMG: ${{ steps.release.outputs.dmg }}
+          RELEASE_CHECKSUM: ${{ steps.release.outputs.checksum }}
+        run: |
+          set -o pipefail
+          gh release create v0.1.1-macos-m4 "$RELEASE_DMG" "$RELEASE_CHECKSUM" --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title "SOL.01 for Apple M4 — included 2025-2026 NQ data" --notes-file .ci-logs/release-notes.md --latest
+          gh api "repos/$GITHUB_REPOSITORY/releases/tags/v0.1.1-macos-m4" > .ci-logs/public-release.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          public = json.loads(Path('.ci-logs/public-release.json').read_text())
+          expected = json.loads(Path('.ci-logs/release-verification.json').read_text())
+          assert not public['draft'] and public['tag_name'] == expected['tag']
+          assets = {asset['name']: asset for asset in public['assets']}
+          dmg = assets[expected['filename']]
+          assert dmg['state'] == 'uploaded' and dmg['size'] == expected['size']
+          assert dmg['digest'] == 'sha256:' + expected['sha256']
+          assert assets[expected['filename'] + '.sha256']['state'] == 'uploaded'
+          print('Public installer upload size and SHA256 verified:', public['html_url'])
+          PY
 
       - name: Upload the recipient's installation instructions
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
@@ -99,6 +199,11 @@ jobs:
             macos/dist/**/BUILD_PROVENANCE.json
             macos/dist/**/requirements-resolved.txt
             macos/dist/**/DOWNLOADS.json
+            macos/.ci-logs/unit-tests.log
+            macos/.ci-logs/data-archive-verification.json
+            macos/.ci-logs/release-verification.json
+            macos/.ci-logs/public-release.json
+          include-hidden-files: true
           if-no-files-found: error
           retention-days: 30
 

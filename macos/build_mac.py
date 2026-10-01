@@ -17,9 +17,11 @@ import sysconfig
 import os
 import venv
 
+from market_data import MANIFEST_NAME, file_sha256, verify_payload
+
 ROOT = Path(__file__).resolve().parent
 MAGIC = bytes.fromhex("2b0e0d0a")
-APP_VERSION = "0.1.0"
+APP_VERSION = "0.1.1"
 
 
 def sha256(path: Path) -> str:
@@ -77,7 +79,7 @@ def validate_payload() -> dict[str, str]:
     for path in (ROOT / "source" / "idle_trader" / "__init__.pyc", ROOT / "source" / "sol_manual_entry.pyc", ROOT / "launch.py", ROOT / "mac_compat.py", ROOT / "demo" / "SYNTHETIC_DEMO.csv", *license_files):
         if not path.is_file():
             raise SystemExit(f"Required build input is missing: {path}")
-    inputs = files + license_files + [manifest_path, ROOT / "launch.py", ROOT / "mac_compat.py", ROOT / "build_mac.py", ROOT / "build_mac.command", ROOT / "SOL.01.spec", ROOT / "requirements-macos.txt", ROOT / "requirements-build.txt", ROOT / "demo" / "SYNTHETIC_DEMO.csv"]
+    inputs = files + license_files + [manifest_path, ROOT / "launch.py", ROOT / "mac_compat.py", ROOT / "market_data.py", ROOT / "build_mac.py", ROOT / "build_mac.command", ROOT / "SOL.01.spec", ROOT / "requirements-macos.txt", ROOT / "requirements-build.txt", ROOT / "demo" / "SYNTHETIC_DEMO.csv"]
     return {path.relative_to(ROOT).as_posix(): sha256(path) for path in inputs}
 
 
@@ -121,6 +123,8 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--codesign-identity", help="Optional installed Developer ID Application certificate name.")
     parser.add_argument("--entitlements", type=Path, help="Optional entitlements plist for that signing identity.")
+    parser.add_argument("--require-market-data", action="store_true", help="Require and verify the complete historical-data payload for this release.")
+    parser.add_argument("--skip-archive", action="store_true", help="Leave archive creation to the installer packaging step.")
     parser.add_argument("--_collect-notices", type=Path, help=argparse.SUPPRESS)
     args = parser.parse_args()
     arch = validate_host()
@@ -130,6 +134,19 @@ def main() -> int:
         collect_notices(args._collect_notices.resolve())
         return 0
     source_hashes = validate_payload()
+    try:
+        market_manifest = verify_payload(ROOT / "market_data", required=args.require_market_data)
+    except (ValueError, OSError) as error:
+        raise SystemExit(f"Market-data verification failed: {error}") from error
+    market_provenance = None
+    if market_manifest is not None:
+        manifest_path = ROOT / "market_data" / MANIFEST_NAME
+        source_hashes[manifest_path.relative_to(ROOT).as_posix()] = file_sha256(manifest_path)
+        market_provenance = {
+            "dataset_id": market_manifest["dataset_id"], "folder": market_manifest["folder"],
+            "file_count": market_manifest["file_count"], "total_bytes": market_manifest["total_bytes"],
+            "manifest_sha256": file_sha256(manifest_path), "fully_verified_before_build": True,
+        }
     if args.entitlements and not args.codesign_identity:
         parser.error("--entitlements requires --codesign-identity.")
     if args.entitlements and not args.entitlements.resolve().is_file():
@@ -162,7 +179,7 @@ def main() -> int:
     dependencies = json.loads(run([str(python), "-I", "-c", version_code], capture=True).stdout)
     minimum_macos = ".".join(platform.mac_ver()[0].split(".")[:2])
     provenance = {
-        "name": "SOL.01", "version": APP_VERSION, "edition": "manual",
+        "name": "SOL.01", "version": APP_VERSION, "core_application_version": "0.1.0", "edition": "manual",
         "platform": "macOS", "architecture": arch, "build_id": build_id,
         "built_at_utc": datetime.now(timezone.utc).isoformat(),
         "python": platform.python_version(), "bytecode_magic": MAGIC.hex(),
@@ -170,12 +187,14 @@ def main() -> int:
         "bundle_identifier": "org.sol.manual", "dependencies": dependencies,
         "input_sha256": source_hashes, "codesigning": "Developer ID" if args.codesign_identity else "ad-hoc",
         "notarized": False,
+        "market_data": market_provenance,
     }
     (resources / "BUILD_PROVENANCE.json").write_text(json.dumps(provenance, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     env = os.environ.copy()
     env.pop("PYTHONHOME", None)
     env.pop("PYTHONPATH", None)
     env.update({"SOL_TARGET_ARCH": arch, "SOL_BUILD_RESOURCES": str(resources), "SOL_MIN_MACOS": minimum_macos})
+    env["SOL_REQUIRE_MARKET_DATA"] = "1" if args.require_market_data else "0"
     if args.codesign_identity:
         env["SOL_CODESIGN_IDENTITY"] = args.codesign_identity
     else:
@@ -198,11 +217,13 @@ def main() -> int:
     run(["/usr/bin/lipo", str(executable), "-verify_arch", arch])
     shutil.copy2(resources / "BUILD_PROVENANCE.json", output / "BUILD_PROVENANCE.json")
     shutil.copy2(resources / "requirements-resolved.txt", output / "requirements-resolved.txt")
-    archive = output / f"SOL.01-macOS-{arch}-{APP_VERSION}.zip"
-    run(["/usr/bin/ditto", "-c", "-k", "--sequesterRsrc", "--keepParent", str(app), str(archive)])
-    checksum = sha256(archive)
-    (archive.with_suffix(".zip.sha256")).write_text(f"{checksum}  {archive.name}\n", encoding="utf-8")
-    print(f"\nCreated {app}\nCreated {archive}\nSHA256 {checksum}\nSmoke tests and bundle signature verification passed. Test Finder launch before distribution.")
+    if not args.skip_archive:
+        archive = output / f"SOL.01-macOS-{arch}-{APP_VERSION}.zip"
+        run(["/usr/bin/ditto", "-c", "-k", "--sequesterRsrc", "--keepParent", str(app), str(archive)])
+        checksum = sha256(archive)
+        (archive.with_suffix(".zip.sha256")).write_text(f"{checksum}  {archive.name}\n", encoding="utf-8")
+        print(f"Created {archive}\nSHA256 {checksum}")
+    print(f"\nCreated {app}\nSmoke tests and bundle signature verification passed. Test Finder launch before distribution.")
     return 0
 
 
